@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabaseClient';
 import { Save, Image as ImageIcon, Loader2, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 export default function CreateCoursePage() {
     const [matiere, setMatiere] = useState('');
@@ -12,6 +14,7 @@ export default function CreateCoursePage() {
     const [content, setContent] = useState('');
     const [saving, setSaving] = useState(false);
     const [uploadingImg, setUploadingImg] = useState(false);
+    const [activeTab, setActiveTab] = useState<'write' | 'preview'>('write');
     const router = useRouter();
     const supabase = createClient();
 
@@ -75,7 +78,7 @@ export default function CreateCoursePage() {
     };
 
     return (
-        <div className="max-w-4xl mx-auto space-y-6">
+        <div className="max-w-4xl mx-auto space-y-6 pb-20">
             <div className="flex items-center gap-4 mb-8">
                 <Link href="/dashboard" className="p-2 hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-full">
                     <ArrowLeft className="h-6 w-6" />
@@ -105,37 +108,68 @@ export default function CreateCoursePage() {
             </div>
 
             <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                    <label className="block text-sm font-medium">Contenu du cours (Markdown)</label>
-
-                    <div className="relative">
-                        <input
-                            type="file"
-                            id="editor-img-upload"
-                            className="hidden"
-                            accept="image/*"
-                            onChange={handleImageUpload}
-                            disabled={uploadingImg}
-                        />
-                        <label
-                            htmlFor="editor-img-upload"
-                            className={`flex items-center gap-2 text-sm px-3 py-1.5 rounded-md cursor-pointer bg-gray-100 hover:bg-gray-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 transition-colors ${uploadingImg ? 'opacity-50 cursor-wait' : ''}`}
+                <div className="flex items-center justify-between border-b border-gray-200 dark:border-neutral-800 mb-4">
+                    <div className="flex gap-4">
+                        <button
+                            onClick={() => setActiveTab('write')}
+                            className={`py-2 px-4 text-sm font-medium border-b-2 transition-colors ${activeTab === 'write' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500'}`}
                         >
-                            {uploadingImg ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImageIcon className="h-4 w-4" />}
-                            Insérer une image
-                        </label>
+                            Écrire
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('preview')}
+                            className={`py-2 px-4 text-sm font-medium border-b-2 transition-colors ${activeTab === 'preview' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500'}`}
+                        >
+                            Aperçu
+                        </button>
                     </div>
+
+                    {activeTab === 'write' && (
+                        <div className="relative bottom-1">
+                            <input
+                                type="file"
+                                id="editor-img-upload"
+                                className="hidden"
+                                accept="image/*"
+                                onChange={handleImageUpload}
+                                disabled={uploadingImg}
+                            />
+                            <label
+                                htmlFor="editor-img-upload"
+                                className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded-md cursor-pointer bg-gray-100 hover:bg-gray-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 transition-colors ${uploadingImg ? 'opacity-50 cursor-wait' : ''}`}
+                            >
+                                {uploadingImg ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImageIcon className="h-4 w-4" />}
+                                Insérer une image
+                            </label>
+                        </div>
+                    )}
                 </div>
 
-                <textarea
-                    value={content}
-                    onChange={e => setContent(e.target.value)}
-                    className="w-full h-[500px] p-4 font-mono text-sm border rounded-xl dark:bg-neutral-900 dark:border-neutral-700 focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
-                    placeholder="# Mon Cours...&#10;&#10;Commencez à écrire ici. Vous pouvez utiliser du Markdown."
-                />
-                <p className="text-xs text-gray-500">
-                    Supporte les titres (#), gras (**text**), italique (*text*), listes (- item) et plus.
-                </p>
+                {activeTab === 'write' ? (
+                    <>
+                        <textarea
+                            value={content}
+                            onChange={e => setContent(e.target.value)}
+                            className="w-full h-[500px] p-4 font-mono text-sm border rounded-xl dark:bg-neutral-900 dark:border-neutral-700 focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
+                            placeholder="# Mon Cours...&#10;&#10;Commencez à écrire ici. Vous pouvez utiliser du Markdown."
+                        />
+                        <p className="text-xs text-gray-500">
+                            Supporte les titres (#), gras (**text**), italique (*text*), listes (- item) et plus.
+                        </p>
+                    </>
+                ) : (
+                    <div className="w-full h-[500px] overflow-y-auto p-8 border rounded-xl dark:border-neutral-700 bg-white dark:bg-neutral-900">
+                        <ReactMarkdown
+                            className="prose dark:prose-invert max-w-none"
+                            remarkPlugins={[remarkGfm]}
+                            components={{
+                                img: ({ node, ...props }) => <img {...props} className="rounded-lg max-w-full h-auto my-4 border border-gray-100 dark:border-neutral-800" />
+                            }}
+                        >
+                            {content || '*Aucun contenu à afficher*'}
+                        </ReactMarkdown>
+                    </div>
+                )}
             </div>
 
             <div className="flex justify-end pt-4">
