@@ -1,23 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 import { extractTextFromFile } from '@/lib/extractText';
 import { generateText } from 'ai';
 import { grokModel } from '@/lib/ai';
-
-// Initialize Supabase Admin client for service-role operations if needed, 
-// OR better: use the user's session for RLS. 
-// However, Route Handlers don't automatically have the user session without cookies.
-// The standard pattern with @supabase/ssr in App Router is to create a server client.
-// BUT for file upload + processing, we often just need the user ID. 
-// Let's use standard supabase-js with the user's access token passed in headers OR 
-// safer: use createServerClient from @supabase/ssr if we had it set up.
-// For MVP speed and clean code, we'll assume the client sends the session token or we use the service role 
-// if we trust the protection (but we want RLS). 
-// Let's stick to using `createClient` from `@supabase/supabase-js` with the ANON key 
-// and relying on the `Authorization: Bearer <token>` header automatically passed by the client or manually.
-
-// Actually, to read the user from the server side properly with RLS, we should use @supabase/ssr.
-// Let's create a quick server-side client helper or just do it inline here.
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 
@@ -38,8 +22,6 @@ async function createSupabaseServerClient() {
                         );
                     } catch {
                         // The `setAll` method was called from a Server Component.
-                        // This can be ignored if you have middleware refreshing
-                        // user sessions.
                     }
                 },
             },
@@ -59,16 +41,16 @@ export async function POST(req: NextRequest) {
 
         const formData = await req.formData();
         const file = formData.get('file') as File;
+        const manualMatiere = formData.get('matiere') as string;
+        const manualChapitre = formData.get('chapitre') as string;
 
         if (!file) {
             return NextResponse.json({ error: 'No file provided' }, { status: 400 });
         }
 
-        // 1. Upload file to Storage (optional for MVP but good practice)
+        // 1. Upload file to Storage
         const fileExt = file.name.split('.').pop();
         const filePath = `${user.id}/${Date.now()}.${fileExt}`;
-
-        // Convert to ArrayBuffer for storage upload
         const arrayBuffer = await file.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
 
@@ -78,11 +60,7 @@ export async function POST(req: NextRequest) {
                 contentType: file.type,
             });
 
-        if (uploadError) {
-            console.error('Upload error:', uploadError);
-            // We continue even if storage fails? No, better to fail.
-            // But for MVP, maybe we just want the text. Let's try to proceed extracting text anyway.
-        }
+        if (uploadError) console.error('Upload error:', uploadError);
 
         const fileUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/course-files/${filePath}`;
 
@@ -95,29 +73,49 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Failed to extract text from file' }, { status: 500 });
         }
 
-        if (!extractedText || extractedText.length < 50) {
-            return NextResponse.json({ error: 'Not enough text extracted.' }, { status: 400 });
-        }
-
-        // 3. AI Categorization (Subject & Chapter)
-        const { text: metadataText } = await generateText({
-            model: grokModel,
-            prompt: `Analyse le texte de cours suivant et extrais : 1) La matière scolaire (ex: Mathématiques, Français, Histoire). 2) Le titre du chapitre ou le thème principal.
-      Réponds UNIQUEMENT au format JSON : { "matiere": "...", "chapitre": "..." }
-      
-      Début du texte :
-      ${extractedText.slice(0, 2000)}`
-        });
-
+        // 3. Metadata (Manual OR AI)
         let metadata = { matiere: 'Autre', chapitre: 'Sans titre' };
-        try {
-            // Find JSON usage
-            const jsonMatch = metadataText.match(/\{[\s\S]*\}/);
-            if (jsonMatch) {
-                metadata = JSON.parse(jsonMatch[0]);
+
+        if (manualMatiere && manualChapitre) {
+            // User provided both, skip AI
+            metadata = { matiere: manualMatiere, chapitre: manualChapitre };
+        } else {
+            // Try AI if available, otherwise just use manual fields if partial, or fallback
+            if (manualMatiere) metadata.matiere = manualMatiere;
+            if (manualChapitre) metadata.chapitre = manualChapitre;
+
+            // Only call AI if explicit XAI Key is set, to avoid crashing if user wants "NO AI"
+            if (process.env.XAI_API_KEY || process.env.VERCEL_AI_API_KEY) {
+                try {
+                    const { text: metadataText } = await generateText({
+                        model: grokModel,
+                        prompt: `Analyse le texte de cours suivant et extrais : 1) La matière scolaire (ex: Mathématiques, Français, Histoire). 2) Le titre du chapitre ou le thème principal.
+                        Réponds UNIQUEMENT au format JSON : { "matiere": "...", "chapitre": "..." }
+                        
+                        Début du texte :
+                        ${extractedText.slice(0, 2000)}`
+                    });
+
+                    const jsonMatch = metadataText.match(/\{[\s\S]*\}/);
+                    if (jsonMatch) {
+                        const aiMetadata = JSON.parse(jsonMatch[0]);
+                        // Only overwrite if manual was not provided
+                        if (!manualMatiere) metadata.matiere = aiMetadata.matiere;
+                        if (!manualChapitre) metadata.chapitre = aiMetadata.chapitre;
+                    }
+                } catch (e) {
+                    console.warn('AI Metadata parsing failed or skipped:', e);
+                    // Fallback to filename if completely empty
+                    if (!metadata.chapitre || metadata.chapitre === 'Sans titre') {
+                        metadata.chapitre = file.name.replace(/\.[^/.]+$/, "");
+                    }
+                }
+            } else {
+                // No AI Key, just allow basic upload
+                if (!metadata.chapitre || metadata.chapitre === 'Sans titre') {
+                    metadata.chapitre = file.name.replace(/\.[^/.]+$/, "");
+                }
             }
-        } catch (e) {
-            console.error('AI Metadata parsing failed', e);
         }
 
         // 4. Save to Database

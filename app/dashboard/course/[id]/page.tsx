@@ -5,6 +5,8 @@ import { useParams } from 'next/navigation';
 import { createClient } from '@/lib/supabaseClient';
 import { FileText, Wand2, BookOpen, CheckCircle, BrainCircuit } from 'lucide-react';
 import QuizView from '@/components/QuizView';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 export default function CoursePage() {
     const params = useParams();
@@ -131,8 +133,16 @@ export default function CoursePage() {
 
             <div className="min-h-[400px]">
                 {tab === 'content' && (
-                    <div className="prose dark:prose-invert max-w-none bg-white dark:bg-neutral-900 p-8 rounded-xl border border-gray-200 dark:border-neutral-800 whitespace-pre-wrap">
-                        {course.content_text}
+                    <div className="bg-white dark:bg-neutral-900 p-8 rounded-xl border border-gray-200 dark:border-neutral-800">
+                        <ReactMarkdown
+                            className="prose dark:prose-invert max-w-none text-gray-800 dark:text-gray-200"
+                            remarkPlugins={[remarkGfm]}
+                            components={{
+                                img: ({ node, ...props }) => <img {...props} className="rounded-lg max-w-full h-auto my-4 border border-gray-100 dark:border-neutral-800" />
+                            }}
+                        >
+                            {course.content_text}
+                        </ReactMarkdown>
                     </div>
                 )}
 
@@ -144,9 +154,12 @@ export default function CoursePage() {
                                 L'IA reformule le cours pour toi...
                             </div>
                         ) : (
-                            <div className="prose dark:prose-invert max-w-none whitespace-pre-wrap">
+                            <ReactMarkdown
+                                className="prose dark:prose-invert max-w-none"
+                                remarkPlugins={[remarkGfm]}
+                            >
                                 {explanation || "Cliquez sur 'Simplifier' pour obtenir une version reformulée."}
-                            </div>
+                            </ReactMarkdown>
                         )}
                     </div>
                 )}
