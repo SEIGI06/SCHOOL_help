@@ -86,3 +86,26 @@ create policy "Users can upload course files"
 create policy "Users can view course files"
   on storage.objects for select
   using ( bucket_id = 'course-files' and auth.uid() = owner );
+-- Flashcards table
+create table flashcards (
+  id uuid default uuid_generate_v4() primary key,
+  course_id uuid references courses(id) on delete cascade not null,
+  front text not null,
+  back text not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- RLS for flashcards
+alter table flashcards enable row level security;
+
+create policy "Users can view their own flashcards"
+on flashcards for select
+using ( auth.uid() in (select user_id from courses where id = flashcards.course_id) );
+
+create policy "Users can insert their own flashcards"
+on flashcards for insert
+with check ( auth.uid() in (select user_id from courses where id = flashcards.course_id) );
+
+create policy "Users can delete their own flashcards"
+on flashcards for delete
+using ( auth.uid() in (select user_id from courses where id = flashcards.course_id) );

@@ -8,16 +8,12 @@ import Link from 'next/link';
 import { PenTool } from 'lucide-react';
 
 export default function DashboardPage() {
-    const [courses, setCourses] = useState([]);
+    const [courses, setCourses] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    const supabase = createClient();
+    const [searchTerm, setSearchTerm] = useState('');
+    const [selectedSubject, setSelectedSubject] = useState('all');
 
-    // Basic client-side fetch for the MVP. 
-    // Ideally this would be a Server Component fetching data, handled by page.tsx as Server Component.
-    // But since I made this file 'use client' to handle state updates easily after upload (without complex revalidation logic for now), it works.
-    // Actually, let's try to make it cleaner: keep this a client component or mix?
-    // User asked for "dashboard/page.tsx".
-    // Let's stick to client-side fetch for simplicity of "refresh after upload" triggering a re-fetch.
+    const supabase = createClient();
 
     const fetchCourses = async () => {
         try {
@@ -35,20 +31,16 @@ export default function DashboardPage() {
         fetchCourses();
     }, []);
 
-    // We can pass `fetchCourses` to UploadDropzone to refresh list
-    // Or just rely on router.refresh() if this was a Server Component.
-    // Since I am using router.refresh() in Dropzone, let's see. 
-    // router.refresh() refreshes Server Components. It won't re-run this useEffect. 
-    // For MVP, simply reloading the page or polling is fine. 
-    // Better: Convert this component to Server Component and import Client Components. 
+    // Extract unique subjects
+    const subjects = ['all', ...Array.from(new Set(courses.map(c => c.matiere).filter(Boolean)))];
 
-    // BUT: I already started writing it as 'use client'. 
-    // Let's Refactor: `DashboardPage` -> Server Component. `DashboardContent` -> Client Component.
-    // This is better for Next.js 15.
-
-    // Wait, I can't overwrite `page.tsx` with a Client component easily if I want async data fetching.
-    // Let's write this file as a SERVER component that fetches data, and passes it to a `DashboardView` client component?
-    // No, let's keep it simple: Client Component that fetches on mount. It's an MVP.
+    // Filter courses
+    const filteredCourses = courses.filter(course => {
+        const matchesSearch = (course.chapitre || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
+                              (course.matiere || '').toLowerCase().includes(searchTerm.toLowerCase());
+        const matchesSubject = selectedSubject === 'all' || course.matiere === selectedSubject;
+        return matchesSearch && matchesSubject;
+    });
 
     return (
         <div className="max-w-6xl mx-auto space-y-10">
@@ -65,14 +57,38 @@ export default function DashboardPage() {
 
             <div className="grid gap-8 md:grid-cols-[2fr,1fr]">
                 <div className="space-y-6">
-                    <div className="flex items-center justify-between">
-                        <h3 className="text-xl font-semibold text-gray-900 dark:text-white">Mes cours disponibles</h3>
-                        <button onClick={fetchCourses} className="text-sm text-indigo-600 hover:underline">Actualiser</button>
+                    <div className="flex flex-col gap-4">
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-xl font-semibold text-gray-900 dark:text-white">Mes cours disponibles</h3>
+                             <button onClick={fetchCourses} className="text-sm text-indigo-600 hover:underline">Actualiser</button>
+                        </div>
+                        
+                        {/* Search and Filters Bar */}
+                        <div className="flex gap-2">
+                            <input 
+                                type="text" 
+                                placeholder="Rechercher un cours..." 
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="flex-1 p-2 border border-gray-300 dark:border-neutral-700 rounded-lg dark:bg-neutral-800 focus:ring-2 focus:ring-indigo-500 outline-none"
+                            />
+                            <select 
+                                value={selectedSubject}
+                                onChange={(e) => setSelectedSubject(e.target.value)}
+                                className="p-2 border border-gray-300 dark:border-neutral-700 rounded-lg dark:bg-neutral-800 outline-none"
+                            >
+                                <option value="all">Toutes matières</option>
+                                {subjects.filter(s => s !== 'all').map(s => (
+                                    <option key={s} value={s}>{s}</option>
+                                ))}
+                            </select>
+                        </div>
                     </div>
+
                     {loading ? (
                         <p>Chargement...</p>
                     ) : (
-                        <CourseList courses={courses} />
+                        <CourseList courses={filteredCourses} />
                     )}
                 </div>
 
